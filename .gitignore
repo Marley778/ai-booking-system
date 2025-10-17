@@ -1,0 +1,8 @@
+# Ignore environment and secret files
+variables.env
+service-account.json
+render.ymal
+
+# Ignore Python cache
+__pycache__/
+*.pyc
