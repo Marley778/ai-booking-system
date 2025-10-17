@@ -11,12 +11,13 @@ from dotenv import load_dotenv
 # -----------------------------
 # LOAD ENV VARIABLES
 # -----------------------------
+# Load local .env for development
 load_dotenv("variables.env")
 
-SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
-CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-BASE_ADDRESS = os.getenv("BASE_ADDRESS")
+SERVICE_ACCOUNT_FILE = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "service-account.json")
+CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID")
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
+BASE_ADDRESS = os.environ.get("BASE_ADDRESS")
 
 # -----------------------------
 # JOB DURATIONS
@@ -45,7 +46,7 @@ calendar_service = build("calendar", "v3", credentials=credentials)
 # -----------------------------
 # FASTAPI APP
 # -----------------------------
-app = FastAPI(title="AI Trades Booking Test Backend")
+app = FastAPI(title="AI Trades Booking Backend")
 
 # -----------------------------
 # MODELS
@@ -66,19 +67,15 @@ def get_travel_time(origin, destination):
         "key": GOOGLE_MAPS_API_KEY
     }
     res = requests.get(url, params=params).json()
-    print("Distance Matrix response:", res)  # <-- debug
 
     if "rows" not in res or not res["rows"]:
-        print("❌ No rows returned from Distance Matrix API")
         return 0
 
     elements = res["rows"][0].get("elements")
     if not elements or elements[0].get("status") != "OK":
-        print("❌ Invalid elements returned:", res)
         return 0
 
     return elements[0]["duration"]["value"] / 60  # minutes
-
 
 def get_job_duration(job_type):
     return JOB_DURATIONS.get(job_type.lower(), 60)
@@ -94,14 +91,12 @@ def get_calendar_events(start_time, end_time):
     return events_result.get("items", [])
 
 def find_available_slot(job_type, requested_time, job_address):
-    # Use BASE_ADDRESS as engineer location for now
     start_location = BASE_ADDRESS
 
     travel_time = get_travel_time(start_location, job_address)
     job_duration = get_job_duration(job_type)
     end_time = requested_time + timedelta(minutes=travel_time + job_duration)
 
-    # Check Google Calendar conflicts
     events = get_calendar_events(requested_time, end_time)
     conflict = any(
         datetime.fromisoformat(e['start'].get('dateTime', e['start'].get('date'))) < end_time and
@@ -110,9 +105,10 @@ def find_available_slot(job_type, requested_time, job_address):
     )
 
     if conflict:
-        return None  # no slot available
+        return None
+
     return {
-        "engineer": "Tom",  # dummy engineer
+        "engineer": "Tom",
         "start": requested_time,
         "end": end_time,
         "travel_time_minutes": travel_time,
@@ -136,18 +132,9 @@ async def get_open_slots(request: Request):
     return JSONResponse({"available": True, "slot": slot})
 
 # -----------------------------
-# RUN SERVER
+# RUN SERVER (for local testing)
 # -----------------------------
 if __name__ == "__main__":
     import uvicorn
-    import socket
-
-    # Find a free port
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("", 0))  # Bind to a free port assigned by the OS
-    free_port = sock.getsockname()[1]
-    sock.close()
-
-    print(f"Starting server on port {free_port}...")
-    uvicorn.run("Ai_script:app", host="0.0.0.0", port=free_port, reload=True)
-
+    port = int(os.environ.get("PORT", 8050))
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=True)
